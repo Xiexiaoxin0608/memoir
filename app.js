@@ -2,6 +2,11 @@
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
 
+    // ========== Supabase ==========
+    const SUPABASE_URL = 'https://dvzwxifvfyuiwhrhfmnb.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2end4aWZ2Znl1aXdocmhmbW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjU5MTMsImV4cCI6MjA5Njc0MTkxM30._8fLeeHhNjv0GAI_83Pmmekoai5pH7pzzfx5vIvU-X0';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
     // ========== Particles ==========
     const particlesEl = $('#particles');
     for (let i = 0; i < 30; i++) {
@@ -28,14 +33,39 @@
         setTimeout(() => t.classList.remove('show'), 2500);
     }
 
-    // ========== Data store ==========
-    const STORE_KEY = 'memoir_data';
-    let data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || {
-        timeline: [],
-        gallery: [],
-        moments: []
-    };
-    function save() { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+    // ========== Upload image to Supabase Storage ==========
+    async function uploadImage(file) {
+        const ext = file.name.split('.').pop();
+        const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { data, error } = await supabase.storage.from('memoir-images').upload(path, file);
+        if (error) { console.error('Upload error:', error); return null; }
+        const { data: urlData } = supabase.storage.from('memoir-images').getPublicUrl(data.path);
+        return urlData.publicUrl;
+    }
+
+    async function deleteImage(url) {
+        const path = url.split('/memoir-images/')[1];
+        if (path) await supabase.storage.from('memoir-images').remove([path]);
+    }
+
+    // ========== Data ==========
+    let timelineData = [];
+    let galleryData = [];
+    let momentsData = [];
+
+    async function loadAll() {
+        const [tl, gl, ml] = await Promise.all([
+            supabase.from('timeline').select('*').order('date', { ascending: false }),
+            supabase.from('gallery').select('*').order('created_at', { ascending: false }),
+            supabase.from('moments').select('*').order('created_at', { ascending: false })
+        ]);
+        timelineData = tl.data || [];
+        galleryData = gl.data || [];
+        momentsData = ml.data || [];
+        renderTimeline();
+        renderGallery();
+        renderMoments();
+    }
 
     // ========== Timeline ==========
     const timelineContainer = $('#timeline-container');
@@ -43,9 +73,9 @@
 
     function renderTimeline() {
         timelineContainer.innerHTML = '<div class="timeline-line"></div>';
-        data.timeline.sort((a, b) => new Date(b.date) - new Date(a.date));
+        timelineData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        data.timeline.forEach((item, i) => {
+        timelineData.forEach((item, i) => {
             const div = document.createElement('div');
             div.className = 'timeline-item';
             div.style.animationDelay = (i * 0.1) + 's';
@@ -53,7 +83,7 @@
                 <div class="timeline-dot"></div>
                 <div class="timeline-card" style="position:relative">
                     <button class="delete-btn" data-id="${item.id}">&times;</button>
-                    ${item.image ? `<img src="${item.image}" alt="${item.title}">` : ''}
+                    ${item.image_url ? `<img src="${item.image_url}" alt="${item.title}">` : ''}
                     <div class="timeline-date">${item.date}</div>
                     <h3>${item.title}</h3>
                     <p>${item.description}</p>
@@ -63,10 +93,13 @@
         });
 
         timelineContainer.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                data.timeline = data.timeline.filter(t => t.id !== btn.dataset.id);
-                save();
+                const id = btn.dataset.id;
+                const item = timelineData.find(t => t.id === id);
+                if (item?.image_url) await deleteImage(item.image_url);
+                await supabase.from('timeline').delete().eq('id', id);
+                timelineData = timelineData.filter(t => t.id !== id);
                 renderTimeline();
                 showToast('已删除');
             });
@@ -110,16 +143,16 @@
         const trigger = timelineModalOverlay.querySelector('#tl-upload-trigger');
         const fileInput = timelineModalOverlay.querySelector('#tl-file-input');
         const preview = timelineModalOverlay.querySelector('#tl-image-preview');
-        let tlImage = null;
+        let tlFile = null;
 
         trigger.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            tlFile = file;
             const reader = new FileReader();
             reader.onload = (ev) => {
-                tlImage = ev.target.result;
-                preview.src = tlImage;
+                preview.src = ev.target.result;
                 preview.style.display = 'block';
                 trigger.style.display = 'none';
             };
@@ -130,20 +163,25 @@
             timelineModalOverlay.classList.remove('active');
         });
 
-        timelineModalOverlay.querySelector('#tl-save').addEventListener('click', () => {
+        timelineModalOverlay.querySelector('#tl-save').addEventListener('click', async () => {
             const title = timelineModalOverlay.querySelector('#tl-title').value.trim();
             const date = timelineModalOverlay.querySelector('#tl-date').value;
             const desc = timelineModalOverlay.querySelector('#tl-desc').value.trim();
             if (!title || !date) { showToast('请填写标题和日期'); return; }
 
-            data.timeline.push({
-                id: Date.now().toString(),
-                title,
-                date,
-                description: desc,
-                image: tlImage
-            });
-            save();
+            const saveBtn = timelineModalOverlay.querySelector('#tl-save');
+            saveBtn.textContent = '保存中...';
+            saveBtn.disabled = true;
+
+            let imageUrl = '';
+            if (tlFile) imageUrl = await uploadImage(tlFile) || '';
+
+            const id = Date.now().toString();
+            await supabase.from('timeline').insert({ id, title, date, description: desc, image_url: imageUrl });
+            timelineData.unshift({ id, title, date, description: desc, image_url: imageUrl });
+
+            saveBtn.textContent = '保存';
+            saveBtn.disabled = false;
             renderTimeline();
             timelineModalOverlay.classList.remove('active');
             showToast('时刻已添加');
@@ -174,80 +212,70 @@
     const modalInfo = $('#modal-info');
     const modalClose = $('#modal-close');
 
-    uploadZone.addEventListener('click', () => galleryFileInput.click());
+    function bindUploadZone() {
+        const uz = $('#upload-zone');
+        const fi = $('#file-input') || galleryFileInput;
+        uz.addEventListener('click', () => fi.click());
+        uz.addEventListener('dragover', (e) => { e.preventDefault(); uz.style.borderColor = 'var(--primary)'; });
+        uz.addEventListener('dragleave', () => { uz.style.borderColor = ''; });
+        uz.addEventListener('drop', (e) => { e.preventDefault(); uz.style.borderColor = ''; handleFiles(e.dataTransfer.files); });
+        fi.addEventListener('change', (e) => handleFiles(e.target.files));
+    }
 
-    uploadZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadZone.style.borderColor = 'var(--primary)';
-        uploadZone.style.background = 'rgba(139,111,71,0.05)';
-    });
+    bindUploadZone();
 
-    uploadZone.addEventListener('dragleave', () => {
-        uploadZone.style.borderColor = '';
-        uploadZone.style.background = '';
-    });
+    async function handleFiles(files) {
+        for (const file of files) {
+            if (!file.type.startsWith('image/')) continue;
+            showToast('上传中...');
+            const imageUrl = await uploadImage(file);
+            if (!imageUrl) { showToast('上传失败'); continue; }
 
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.style.borderColor = '';
-        uploadZone.style.background = '';
-        handleFiles(e.dataTransfer.files);
-    });
-
-    galleryFileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-    function handleFiles(files) {
-        [...files].forEach(file => {
-            if (!file.type.startsWith('image/')) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
-                data.gallery.push({
-                    id,
-                    src: ev.target.result,
-                    name: file.name.replace(/\.[^.]+$/, ''),
-                    category: 'daily',
-                    date: new Date().toLocaleDateString('zh-CN')
-                });
-                save();
-                renderGallery();
-                showToast('照片已添加');
-            };
-            reader.readAsDataURL(file);
-        });
+            const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+            await supabase.from('gallery').insert({
+                id, name: file.name.replace(/\.[^.]+$/, ''),
+                category: 'daily', date: new Date().toLocaleDateString('zh-CN'), image_url: imageUrl
+            });
+            galleryData.unshift({
+                id, name: file.name.replace(/\.[^.]+$/, ''),
+                category: 'daily', date: new Date().toLocaleDateString('zh-CN'), image_url: imageUrl
+            });
+            renderGallery();
+            showToast('照片已添加');
+        }
     }
 
     let currentFilter = 'all';
     function renderGallery() {
         galleryGrid.innerHTML = '';
         const filtered = currentFilter === 'all'
-            ? data.gallery
-            : data.gallery.filter(g => g.category === currentFilter);
+            ? galleryData
+            : galleryData.filter(g => g.category === currentFilter);
 
         filtered.forEach((item, i) => {
             const div = document.createElement('div');
             div.className = 'gallery-item';
             div.style.animationDelay = (i * 0.05) + 's';
             div.innerHTML = `
-                <img src="${item.src}" alt="${item.name}">
+                <img src="${item.image_url}" alt="${item.name}">
                 <button class="delete-btn" data-id="${item.id}">&times;</button>
                 <div class="gallery-item-overlay">
                     <h4>${item.name}</h4>
                     <span>${item.date}</span>
                 </div>
             `;
-            div.querySelector('img').addEventListener('click', () => openModal(item.src, item.name));
-            div.querySelector('.delete-btn').addEventListener('click', (e) => {
+            div.querySelector('img').addEventListener('click', () => openModal(item.image_url, item.name));
+            div.querySelector('.delete-btn').addEventListener('click', async (e) => {
                 e.stopPropagation();
-                data.gallery = data.gallery.filter(g => g.id !== item.id);
-                save();
+                await deleteImage(item.image_url);
+                await supabase.from('gallery').delete().eq('id', item.id);
+                galleryData = galleryData.filter(g => g.id !== item.id);
                 renderGallery();
                 showToast('照片已删除');
             });
             galleryGrid.appendChild(div);
         });
 
-        // Re-add upload zone
         const uz = document.createElement('div');
         uz.className = 'upload-zone';
         uz.id = 'upload-zone';
@@ -266,22 +294,7 @@
             <input type="file" id="file-input" multiple accept="image/*" hidden>
         `;
         galleryGrid.appendChild(uz);
-
-        // Rebind upload zone events
-        const newUz = $('#upload-zone');
-        const newInput = $('#file-input') || galleryFileInput;
-        newUz.addEventListener('click', () => newInput.click());
-        newUz.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            newUz.style.borderColor = 'var(--primary)';
-        });
-        newUz.addEventListener('dragleave', () => { newUz.style.borderColor = ''; });
-        newUz.addEventListener('drop', (e) => {
-            e.preventDefault();
-            newUz.style.borderColor = '';
-            handleFiles(e.dataTransfer.files);
-        });
-        newInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        bindUploadZone();
     }
 
     function openModal(src, info) {
@@ -311,58 +324,61 @@
     const momentUploadTrigger = $('#moment-upload-trigger');
     const momentFileInput = $('#moment-file-input');
     const momentsFeed = $('#moments-feed');
-    let momentImage = null;
+    let momentFile = null;
 
     momentUploadTrigger.addEventListener('click', () => momentFileInput.click());
     momentFileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            momentImage = ev.target.result;
-            showToast('图片已选择');
-        };
-        reader.readAsDataURL(file);
+        momentFile = file;
+        showToast('图片已选择');
     });
 
-    momentSubmit.addEventListener('click', () => {
+    momentSubmit.addEventListener('click', async () => {
         const text = momentText.value.trim();
-        if (!text && !momentImage) { showToast('请写下你的心情'); return; }
+        if (!text && !momentFile) { showToast('请写下你的心情'); return; }
 
-        data.moments.unshift({
-            id: Date.now().toString(),
-            text,
-            image: momentImage,
-            time: new Date().toLocaleString('zh-CN')
-        });
-        save();
+        momentSubmit.textContent = '发布中...';
+        momentSubmit.disabled = true;
+
+        let imageUrl = '';
+        if (momentFile) imageUrl = await uploadImage(momentFile) || '';
+
+        const id = Date.now().toString();
+        const time = new Date().toLocaleString('zh-CN');
+        await supabase.from('moments').insert({ id, text, image_url: imageUrl, time });
+        momentsData.unshift({ id, text, image_url: imageUrl, time });
+
+        momentSubmit.textContent = '发布';
+        momentSubmit.disabled = false;
         renderMoments();
         momentText.value = '';
-        momentImage = null;
+        momentFile = null;
         momentFileInput.value = '';
         showToast('心情已记录');
     });
 
     function renderMoments() {
         momentsFeed.innerHTML = '';
-        data.moments.forEach((item, i) => {
+        momentsData.forEach((item, i) => {
             const card = document.createElement('div');
             card.className = 'moment-card feed-card';
             card.style.animationDelay = (i * 0.05) + 's';
             card.innerHTML = `
                 <button class="moment-feed-delete" data-id="${item.id}">删除</button>
                 ${item.text ? `<p class="moment-feed-text">${item.text}</p>` : ''}
-                ${item.image ? `<img class="moment-feed-image" src="${item.image}" alt="心情图片">` : ''}
+                ${item.image_url ? `<img class="moment-feed-image" src="${item.image_url}" alt="心情图片">` : ''}
                 <div class="moment-feed-time">${item.time}</div>
             `;
-            card.querySelector('.moment-feed-delete').addEventListener('click', () => {
-                data.moments = data.moments.filter(m => m.id !== item.id);
-                save();
+            card.querySelector('.moment-feed-delete').addEventListener('click', async () => {
+                if (item.image_url) await deleteImage(item.image_url);
+                await supabase.from('moments').delete().eq('id', item.id);
+                momentsData = momentsData.filter(m => m.id !== item.id);
                 renderMoments();
                 showToast('已删除');
             });
             const img = card.querySelector('.moment-feed-image');
-            if (img) img.addEventListener('click', () => openModal(item.image, item.time));
+            if (img) img.addEventListener('click', () => openModal(item.image_url, item.time));
             momentsFeed.appendChild(card);
         });
     }
@@ -376,11 +392,5 @@
     });
 
     // ========== Init ==========
-    renderTimeline();
-    renderGallery();
-    renderMoments();
-
-    // Set default date for timeline modal
-    const dateInput = document.getElementById('tl-date');
-    if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+    loadAll();
 })();
