@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时光回忆录</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+
+    <nav class="navbar" id="navbar">
+        <div class="nav-brand">时光回忆录</div>
+        <div class="nav-links">
+            <a href="#hero">首页</a>
+            <a href="#timeline">时间线</a>
+            <a href="#gallery">相册</a>
+            <a href="#moments">瞬间</a>
+        </div>
+    </nav>
+
+    <header class="hero" id="hero">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <h1 class="hero-title">时光回忆录</h1>
+            <p class="hero-subtitle">记录生命中每一个珍贵的瞬间</p>
+            <div class="hero-decoration">
+                <span class="line"></span>
+                <span class="diamond"></span>
+                <span class="line"></span>
+            </div>
+            <a href="#timeline" class="hero-btn">开始探索</a>
+        </div>
+        <div class="scroll-indicator">
+            <div class="mouse">
+                <div class="wheel"></div>
+            </div>
+        </div>
+    </header>
+
+    <section class="section timeline-section" id="timeline">
+        <div class="section-header">
+            <span class="section-tag">TIMELINE</span>
+            <h2>岁月的足迹</h2>
+            <p>每一个时间节点，都承载着独特的记忆</p>
+        </div>
+        <div class="timeline" id="timeline-container">
+            <div class="timeline-line"></div>
+        </div>
+        <div class="add-moment" id="add-moment-btn">
+            <div class="add-icon">+</div>
+            <span>添加新时刻</span>
+        </div>
+    </section>
+
+    <section class="section gallery-section" id="gallery">
+        <div class="section-header">
+            <span class="section-tag">GALLERY</span>
+            <h2>光影相册</h2>
+            <p>用照片留住那些不可复制的美好</p>
+        </div>
+        <div class="gallery-filter">
+            <button class="filter-btn active" data-filter="all">全部</button>
+            <button class="filter-btn" data-filter="family">家人</button>
+            <button class="filter-btn" data-filter="travel">旅行</button>
+            <button class="filter-btn" data-filter="daily">日常</button>
+            <button class="filter-btn" data-filter="festival">节日</button>
+        </div>
+        <div class="gallery-grid" id="gallery-grid">
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-content">
+                    <div class="upload-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <p>点击或拖拽上传照片</p>
+                    <span>支持 JPG、PNG、WebP 格式</span>
+                </div>
+                <input type="file" id="file-input" multiple accept="image/*" hidden>
+            </div>
+        </div>
+        <input type="file" id="gallery-file-input" multiple accept="image/*" hidden>
+    </section>
+
+    <section class="section moments-section" id="moments">
+        <div class="section-header">
+            <span class="section-tag">MOMENTS</span>
+            <h2>心语瞬间</h2>
+            <p>记录此刻的心情，留给未来的自己</p>
+        </div>
+        <div class="moments-container">
+            <div class="moments-input-area">
+                <div class="moment-card input-card">
+                    <textarea id="moment-text" placeholder="写下此刻的心情..."></textarea>
+                    <div class="moment-actions">
+                        <div class="moment-upload-btn" id="moment-upload-trigger">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                        </div>
+                        <input type="file" id="moment-file-input" accept="image/*" hidden>
+                        <button class="moment-submit" id="moment-submit">发布</button>
+                    </div>
+                </div>
+            </div>
+            <div class="moments-feed" id="moments-feed"></div>
+        </div>
+    </section>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div class="modal-image-container">
+                <img id="modal-image" src="" alt="预览">
+            </div>
+            <div class="modal-info" id="modal-info"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <p>时光回忆录 &copy; 2026</p>
+            <p class="footer-sub">珍惜每一个当下，记录每一份感动</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
